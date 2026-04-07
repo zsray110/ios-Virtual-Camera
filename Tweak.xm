@@ -2,121 +2,94 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import <AVFoundation/AVFoundation.h>
 
-// --- 前向声明 ---
-@interface UIViewController (VolumeExtension)
-- (void)handlePan:(UIPanGestureRecognizer *)pan;
-- (void)tapViewTapped:(UITapGestureRecognizer *)gestureRecognizer;
-@end
-
+// --- 全局变量 ---
 static UILabel *debugLabel = nil;
-static UIViewController *currentViewController = nil;
 static BOOL isVideoReplaceEnabled = YES;
 static NSString *selectedVideoPath = nil;
 static BOOL hasShownInitialAlert = NO;
 
-// --- 辅助函数实现 ---
-
+// --- 工具函数：显示日志 ---
 static void showDebugLog(NSString *message) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!debugLabel) {
-            debugLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 100, [UIScreen mainScreen].bounds.size.width - 40, 120)];
-            debugLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [[UIApplication sharedApplication].windows firstObject];
+            debugLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 60, window.bounds.size.width - 40, 100)];
+            debugLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
             debugLabel.textColor = [UIColor whiteColor];
             debugLabel.numberOfLines = 0;
             debugLabel.font = [UIFont systemFontOfSize:10];
-            debugLabel.layer.cornerRadius = 8;
-            debugLabel.layer.masksToBounds = YES;
-            debugLabel.userInteractionEnabled = YES;
-            
-            UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [[UIApplication sharedApplication].windows firstObject];
+            debugLabel.layer.cornerRadius = 5;
+            debugLabel.clipsToBounds = YES;
+            debugLabel.userInteractionEnabled = NO;
             [window addSubview:debugLabel];
         }
         debugLabel.text = [NSString stringWithFormat:@"%@\n%@", message, debugLabel.text ?: @""];
     });
 }
 
-static void showAlert(NSString *message) {
+// --- 工具函数：视频选择菜单 ---
+static void showVideoMenu() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" message:message preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [[UIApplication sharedApplication].windows firstObject];
-        [window.rootViewController presentViewController:alert animated:YES completion:nil];
-    });
-}
-
-// 视频选择逻辑
-static void handleVideoSelection(NSString *videoName) {
-    showDebugLog([NSString stringWithFormat:@"选择: %@", videoName]);
-    NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    selectedVideoPath = [documentsPath stringByAppendingFormat:@"/Videos/%@.mp4", videoName];
-    isVideoReplaceEnabled = YES;
-}
-
-static void showVideoSelectionMenu() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"虚拟相机控制" message:@"选择视频文件" preferredStyle:UIAlertControllerStyleAlert];
-        NSArray *videos = @[@"视频1", @"视频2", @"视频3"];
-        for (NSString *v in videos) {
-            [alert addAction:[UIAlertAction actionWithTitle:v style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                handleVideoSelection(v);
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"虚拟相机" message:@"请选择视频源" preferredStyle:UIAlertControllerStyleAlert];
+        
+        for (int i = 1; i <= 3; i++) {
+            NSString *name = [NSString stringWithFormat:@"视频%d", i];
+            [alert addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                NSString *docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+                selectedVideoPath = [docs stringByAppendingFormat:@"/Videos/%@.mp4", name];
+                isVideoReplaceEnabled = YES;
+                showDebugLog([NSString stringWithFormat:@"已选: %@", name]);
             }]];
         }
+        
         [alert addAction:[UIAlertAction actionWithTitle:@"关闭插件" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
             isVideoReplaceEnabled = NO;
+            showDebugLog(@"插件已禁用");
         }]];
+        
         [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         
         UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [[UIApplication sharedApplication].windows firstObject];
-        UIViewController *top = window.rootViewController;
-        while (top.presentedViewController) top = top.presentedViewController;
-        [top presentViewController:alert animated:YES completion:nil];
+        UIViewController *root = window.rootViewController;
+        while (root.presentedViewController) root = root.presentedViewController;
+        [root presentViewController:alert animated:YES completion:nil];
     });
 }
 
-// --- Hook 核心部分 ---
+// --- Hook 核心 ---
 
 %hook AVCaptureDevice
 + (id)deviceWithUniqueID:(id)arg1 {
     if (isVideoReplaceEnabled && selectedVideoPath) {
-        showDebugLog(@"[!] 尝试拦截摄像头...");
+        NSLog(@"[VirtualCamera] 正在拦截设备: %@", arg1);
     }
     return %orig;
 }
 %end
 
 %hook UIViewController
-
-%new
-- (void)handlePan:(UIPanGestureRecognizer *)pan {
-    UIView *view = pan.view;
-    CGPoint translation = [pan translationInView:view.superview];
-    view.center = CGPointMake(view.center.x + translation.x, view.center.y + translation.y);
-    [pan setTranslation:CGPointZero inView:view.superview];
-}
-
-%new
-- (void)tapViewTapped:(UITapGestureRecognizer *)gestureRecognizer {
-    showVideoSelectionMenu();
-}
-
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
-    currentViewController = self;
     if (!hasShownInitialAlert) {
         hasShownInitialAlert = YES;
-        showDebugLog(@"插件注入成功！点击顶部触发菜单");
+        showDebugLog(@"虚拟相机注入成功！点击顶部菜单");
         
-        // 创建点击区域
         UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [[UIApplication sharedApplication].windows firstObject];
-        UIView *tapView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, window.bounds.size.width, 44)];
-        tapView.backgroundColor = [[UIColor blueColor] colorWithAlphaComponent:0.1];
-        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapViewTapped:)];
-        [tapView addGestureRecognizer:tap];
-        [window addSubview:tapView];
+        UIView *tapArea = [[UIView alloc] initWithFrame:CGRectMake(0, 0, window.bounds.size.width, 50)];
+        tapArea.backgroundColor = [[UIColor clearColor] colorWithAlphaComponent:0.01];
+        
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleMenuTap:)];
+        [tapArea addGestureRecognizer:tap];
+        [window addSubview:tapArea];
     }
+}
+
+%new
+- (void)handleMenuTap:(UITapGestureRecognizer *)sender {
+    showVideoMenu();
 }
 %end
 
 %ctor {
-    NSLog(@"[VirtualCamera] Loaded");
+    NSLog(@"[VirtualCamera] 插件加载成功");
 }
