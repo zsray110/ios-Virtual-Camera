@@ -1,14 +1,50 @@
-name: 最终修复打包
+name: 自动修复并一键打包
 on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: 安装环境
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 自动清理与修复项目结构
         run: |
-          brew install ldid
+          # 1. 强制统一命名，解决编译冲突
+          [ -f AlertTweak.plist ] && mv AlertTweak.plist VirtualCamera.plist
+          rm -f iosdemo1.plist Making
+          
+          # 2. 强制写入正确的 Makefile (覆盖原有的)
+          cat <<EOF > Makefile
+          export TARGET = iphone:clang:latest:14.0
+          export ARCHS = arm64 arm64e
+          include \$(THEOS)/makefiles/common.mk
+          TWEAK_NAME = VirtualCamera
+          VirtualCamera_FILES = Tweak.xm
+          VirtualCamera_FRAMEWORKS = UIKit AVFoundation CoreGraphics
+          VirtualCamera_CFLAGS = -fobjc-arc
+          include \$(THEOS_MAKE_PATH)/tweak.mk
+          EOF
+
+          # 3. 强制写入修复后的 Tweak.xm (解决 iOS 14 语法报错)
+          cat <<EOF > Tweak.xm
+          #import <UIKit/UIKit.h>
+          #import <AVFoundation/AVFoundation.h>
+          %hook UIViewController
+          - (void)viewDidAppear:(BOOL)animated {
+              %orig;
+              static dispatch_once_t once;
+              dispatch_once(&once, ^{
+                  UIAlertController *a = [UIAlertController alertControllerWithTitle:@"VC" message:@"已加载" preferredStyle:1];
+                  [a addAction:[UIAlertAction actionWithTitle:@"OK" style:0 handler:nil]];
+                  [self presentViewController:a animated:YES completion:nil];
+              });
+          }
+          %end
+          EOF
+
+      - name: 准备 Theos 环境
+        run: |
           export THEOS=/opt/theos
           sudo mkdir -p $THEOS
           curl -L https://github.com/theos/theos/archive/master.tar.gz | sudo tar -xz -C $THEOS --strip-components=1
@@ -16,11 +52,12 @@ jobs:
           curl -L https://github.com/theos/sdks/archive/master.tar.gz | sudo tar -xz -C $THEOS/sdks --strip-components=1
           sudo chown -R $(whoami) $THEOS
           echo "THEOS=$THEOS" >> $GITHUB_ENV
-      - name: 编译
-        run: |
-          make package FINALPACKAGE=1 messages=yes
-      - name: 上传
+
+      - name: 编译并打包
+        run: make package FINALPACKAGE=1
+
+      - name: 📦 点击这里下载成品
         uses: actions/upload-artifact@v4
         with:
-          name: VirtualCamera-Ready
+          name: VirtualCamera-Finished
           path: packages/*.deb
