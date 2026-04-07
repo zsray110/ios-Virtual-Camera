@@ -4,18 +4,23 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4   # 升级到 v4
         with:
           submodules: recursive
+          
       - name: Setup Theos
         run: |
           sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
           echo "THEOS=/opt/theos" >> $GITHUB_ENV
+          
       - name: Build Package
         run: |
+          # 如果项目缺少必要的 SDK，这一步可能会报错
+          # 我们尝试强制打包
           make package FINALPACKAGE=1
+          
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # 升级到 v4，解决你的报错
         with:
           name: VirtualCamera-DEB
           path: packages/*.deb
