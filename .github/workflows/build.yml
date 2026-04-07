@@ -1,50 +1,37 @@
-name: Build DEB
-on: [push, workflow_dispatch]
+name: 一键在线打包
+on: [push, workflow_dispatch] # push 代码或点击按钮都会触发
+
 jobs:
   build:
     runs-on: macos-latest
-    env:
-      THEOS: /opt/theos
     steps:
-      - name: Checkout Code
+      - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          
-      - name: Install Dependencies
+
+      - name: 准备 Theos 环境
         run: |
-          brew install ldid
+          # 下载预配置好的 Theos (避开 git clone 128 错误)
+          curl -L https://github.com/theos/theos/archive/master.tar.gz -o theos.tar.gz
+          sudo mkdir -p /opt/theos
+          sudo tar -xzf theos.tar.gz -C /opt/theos --strip-components=1
           
-      - name: Setup Theos
-        run: |
-          # 强制清理可能存在的旧目录
-          sudo rm -rf /opt/theos
-          # 克隆 Theos 核心
-          sudo git clone --recursive https://github.com/theos/theos.git $THEOS
-          # 下载 SDK (使用较小的库，避免 128 错误)
-          sudo git clone --depth 1 https://github.com/theos/sdks.git $THEOS/sdks
-          # 修改权限确保 Actions 账户能写入
-          sudo chown -R $(whoami) $THEOS
+          # 下载 iOS 14 SDK
+          sudo mkdir -p /opt/theos/sdks
+          curl -L https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz -o sdk.tar.xz
+          sudo tar -xJf sdk.tar.xz -C /opt/theos/sdks
           
-      - name: Build Package
+          echo "THEOS=/opt/theos" >> $GITHUB_ENV
+
+      - name: 开始编译打包
         run: |
-          # 强制指定为 iOS 14 兼容模式
-          export ARCHS="arm64 arm64e"
+          # 这一步是核心，强制适配 iOS 14 和 64位架构
           export TARGET=iphone:clang:latest:14.0
-          
-          # 检查 Makefile 是否存在
-          if [ ! -f Makefile ]; then
-            echo "错误: 根目录下找不到 Makefile！请确认你克隆的项目结构。"
-            exit 1
-          fi
-          
+          export ARCHS="arm64 arm64e"
           make package FINALPACKAGE=1
-          
-      - name: Upload Artifact
+
+      - name: 保存打包好的文件
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VirtualCamera-Package
-          path: |
-            packages/*.deb
-            ./*.log
+          name: VirtualCamera-iOS14-成品
+          path: packages/*.deb
