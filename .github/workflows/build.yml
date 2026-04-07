@@ -1,58 +1,26 @@
-name: 一键在线打包
+name: 最终修复打包
 on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: macos-latest
     steps:
-      - name: 检出项目代码
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: 安装系统依赖
+      - uses: actions/checkout@v4
+      - name: 安装环境
         run: |
           brew install ldid
-          
-      - name: 自动化配置 Theos 环境
-        run: |
-          # 定义 Theos 路径
           export THEOS=/opt/theos
           sudo mkdir -p $THEOS
-          
-          echo "开始下载 Theos 核心..."
-          # 使用管道直接解压，避免生成损坏的临时文件
-          curl -L https://github.com/theos/theos/archive/refs/heads/master.tar.gz | sudo tar -xz -C $THEOS --strip-components=1
-          
-          echo "开始下载 iOS SDK..."
+          curl -L https://github.com/theos/theos/archive/master.tar.gz | sudo tar -xz -C $THEOS --strip-components=1
           sudo mkdir -p $THEOS/sdks
-          # 下载官方维护的精简版 SDK 仓库
-          curl -L https://github.com/theos/sdks/archive/refs/heads/master.tar.gz | sudo tar -xz -C $THEOS/sdks --strip-components=1
-          
-          # 修正权限，让当前用户有权编译
+          curl -L https://github.com/theos/sdks/archive/master.tar.gz | sudo tar -xz -C $THEOS/sdks --strip-components=1
           sudo chown -R $(whoami) $THEOS
-          
-          # 将路径写入环境变量供后续步骤使用
           echo "THEOS=$THEOS" >> $GITHUB_ENV
-
-      - name: 执行编译打包
+      - name: 编译
         run: |
-          # 强制指定架构和系统版本
-          export ARCHS="arm64 arm64e"
-          export TARGET=iphone:clang:latest:14.0
-          
-          # 检查 Makefile 是否存在
-          if [ ! -f Makefile ]; then
-            echo "错误：根目录下未找到 Makefile，请检查项目结构"
-            exit 1
-          fi
-          
-          # 执行编译命令
-          make package FINALPACKAGE=1
-
-      - name: 上传成品 DEB
-        if: always()
+          make package FINALPACKAGE=1 messages=yes
+      - name: 上传
         uses: actions/upload-artifact@v4
         with:
-          name: VirtualCamera-iOS14-成品
+          name: VirtualCamera-Ready
           path: packages/*.deb
