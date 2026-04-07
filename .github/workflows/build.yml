@@ -4,31 +4,47 @@ jobs:
   build:
     runs-on: macos-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 顺便解决你看到的 Node.js 警告
+      THEOS: /opt/theos
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           
-      - name: Setup Theos & SDK
+      - name: Install Dependencies
         run: |
-          sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
-          # 下载补丁版的 iOS SDK (包含 iOS 14 需要的文件)
-          git clone https://github.com/theos/sdks.git /opt/theos/sdks
-          echo "THEOS=/opt/theos" >> $GITHUB_ENV
+          brew install ldid
+          
+      - name: Setup Theos
+        run: |
+          # 强制清理可能存在的旧目录
+          sudo rm -rf /opt/theos
+          # 克隆 Theos 核心
+          sudo git clone --recursive https://github.com/theos/theos.git $THEOS
+          # 下载 SDK (使用较小的库，避免 128 错误)
+          sudo git clone --depth 1 https://github.com/theos/sdks.git $THEOS/sdks
+          # 修改权限确保 Actions 账户能写入
+          sudo chown -R $(whoami) $THEOS
           
       - name: Build Package
         run: |
-          # 强制指定架构为 64位
+          # 强制指定为 iOS 14 兼容模式
           export ARCHS="arm64 arm64e"
-          # 尝试编译
+          export TARGET=iphone:clang:latest:14.0
+          
+          # 检查 Makefile 是否存在
+          if [ ! -f Makefile ]; then
+            echo "错误: 根目录下找不到 Makefile！请确认你克隆的项目结构。"
+            exit 1
+          fi
+          
           make package FINALPACKAGE=1
           
       - name: Upload Artifact
-        if: always() # 即使失败也尝试上传日志，方便我帮你分析
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: VirtualCamera-Package
           path: |
             packages/*.deb
-            *.log
+            ./*.log
