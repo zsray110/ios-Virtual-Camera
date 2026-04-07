@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = VirtualCamera
 # 确保包含所有必要的源代码
-VirtualCamera_FILES = Tweak.x $(wildcard Classes/*.m)
+VirtualCamera_FILES = Tweak.xm $(wildcard Classes/*.m)
 VirtualCamera_FRAMEWORKS = UIKit AVFoundation CoreMedia CoreVideo CoreGraphics
 VirtualCamera_CFLAGS = -fobjc-arc -Wno-error
 
