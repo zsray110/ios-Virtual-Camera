@@ -3,24 +3,32 @@ on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: macos-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 顺便解决你看到的 Node.js 警告
     steps:
-      - uses: actions/checkout@v4   # 升级到 v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
           
-      - name: Setup Theos
+      - name: Setup Theos & SDK
         run: |
           sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
+          # 下载补丁版的 iOS SDK (包含 iOS 14 需要的文件)
+          git clone https://github.com/theos/sdks.git /opt/theos/sdks
           echo "THEOS=/opt/theos" >> $GITHUB_ENV
           
       - name: Build Package
         run: |
-          # 如果项目缺少必要的 SDK，这一步可能会报错
-          # 我们尝试强制打包
+          # 强制指定架构为 64位
+          export ARCHS="arm64 arm64e"
+          # 尝试编译
           make package FINALPACKAGE=1
           
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4  # 升级到 v4，解决你的报错
+        if: always() # 即使失败也尝试上传日志，方便我帮你分析
+        uses: actions/upload-artifact@v4
         with:
-          name: VirtualCamera-DEB
-          path: packages/*.deb
+          name: VirtualCamera-Package
+          path: |
+            packages/*.deb
+            *.log
